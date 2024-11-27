@@ -1,0 +1,244 @@
+"use client";
+import React, { useState, useEffect } from 'react';
+
+interface Course {
+  id: number;
+  title: string;
+  description: string;
+}
+
+const CourseManagement: React.FC = () => {
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newCourse, setNewCourse] = useState({
+    title: '',
+    description: '',
+  });
+  const [message, setMessage] = useState('');
+  const [userRole, setUserRole] = useState('');
+  const [enrollingCourse, setEnrollingCourse] = useState<number | null>(null);
+  const [error, setError] = useState('');
+  const [enrolledCourses, setEnrolledCourses] = useState<number[]>([]); 
+
+  useEffect(() => {
+    const role = localStorage.getItem('role');
+    setUserRole(role);
+    fetchCourses();
+    if (role === 'student') {
+      fetchEnrolledCourses(); 
+    }
+  }, []);
+
+  const fetchCourses = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const response = await fetch('http://localhost:5000/courses', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch courses');
+      }
+      
+      const data = await response.json();
+      setCourses(data);
+    } catch (error) {
+      setError('Error fetching courses. Please make sure the server is running.');
+      console.error('Fetch error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchEnrolledCourses = async () => {
+    try {
+      const response = await fetch('http://localhost:5000/enrollments', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setEnrolledCourses(data.map((enrollment: any) => enrollment.course_id));
+      } else {
+        setError('Error fetching enrolled courses');
+      }
+    } catch (error) {
+      setError('Error fetching enrolled courses');
+      console.error('Fetch error:', error);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMessage('');
+    
+    try {
+      const response = await fetch('http://localhost:5000/courses', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          ...newCourse,
+          instructor_id: localStorage.getItem('user_id')
+        }),
+      });
+      
+      if (response.ok) {
+        setMessage('Course created successfully!');
+        setNewCourse({ title: '', description: '' });
+        fetchCourses();
+      } else {
+        const data = await response.json();
+        setMessage(data.error || 'Error creating course');
+      }
+    } catch (error) {
+      setMessage('Server error. Please check your connection.');
+    }
+  };
+
+  const handleEnroll = async (courseId: number) => {
+    console.log("Enrollment process started for course:", courseId);
+    setEnrollingCourse(courseId);
+    setMessage('');
+  
+    try {
+      const response = await fetch('http://localhost:5000/enrollments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          course_id: courseId,
+          student_id: localStorage.getItem('user_id'),
+        }),
+      });
+  
+      if (response.ok) {
+        setMessage('Successfully enrolled!');
+        setEnrolledCourses((prev) => [...prev, courseId]);
+        fetchCourses();
+      } else {
+        const data = await response.json();
+        setMessage(data.error || 'Error enrolling in course');
+      }
+    } catch (error) {
+      setMessage('Error during enrollment');
+      console.error(error);
+    } finally {
+      setEnrollingCourse(null);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="p-4 text-center">
+        <div className="animate-pulse">
+          <div className="h-8 bg-gray-200 rounded w-48 mx-auto mb-4"></div>
+          <div className="h-4 bg-gray-200 rounded max-w-md mx-auto mb-2"></div>
+          <div className="h-4 bg-gray-200 rounded max-w-md mx-auto"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-4">
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+          <strong className="font-bold">Error: </strong>
+          <span className="block sm:inline">{error}</span>
+          <button
+            onClick={fetchCourses}
+            className="mt-2 bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4">
+      {userRole === 'instructor' && (
+        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+          <h2 className="text-2xl font-bold mb-4">Create New Course</h2>
+          
+          {message && (
+            <div className="mb-4 p-3 rounded bg-blue-100 text-blue-700">
+              {message}
+            </div>
+          )}
+          
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <input
+              placeholder="Course Title"
+              value={newCourse.title}
+              onChange={(e) => setNewCourse({...newCourse, title: e.target.value})}
+              className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+            />
+            
+            <textarea
+              placeholder="Course Description"
+              value={newCourse.description}
+              onChange={(e) => setNewCourse({...newCourse, description: e.target.value})}
+              className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              rows={4}
+              required
+            />
+            
+            <button
+              type="submit"
+              className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            >
+              Create Course
+            </button>
+          </form>
+        </div>
+      )}
+
+      {courses.length === 0 ? (
+        <div className="text-center py-8">
+          <h3 className="text-xl font-semibold text-gray-600 mb-2">No courses available</h3>
+          <p className="text-gray-500">
+            {userRole === 'instructor' 
+              ? 'Create your first course using the form above!'
+              : 'Check back later for available courses.'}
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {courses.map((course, index) => (
+            <div 
+              key={course.id || `course-${index}`} 
+              className="bg-white rounded-lg shadow-md p-6"
+            >
+              <h3 className="text-xl font-bold mb-2">{course.title}</h3>
+              <p className="text-gray-600 mb-4">{course.description}</p>
+              {userRole === 'student' && (
+                <button 
+                  className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:bg-blue-300"
+                  onClick={() => handleEnroll(course.id)}
+                  disabled={enrolledCourses.includes(course.id) || enrollingCourse === course.id}
+                >
+                  {enrolledCourses.includes(course.id) ? 'Enrolled' : enrollingCourse === course.id ? 'Enrolling...' : 'Enroll'}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default CourseManagement;
